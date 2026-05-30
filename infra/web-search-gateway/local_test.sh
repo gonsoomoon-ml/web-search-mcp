@@ -7,11 +7,18 @@
 # 끝나면 임시 config 자동 삭제. 기존 MCP 설정은 전혀 안 건드림.
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$PROJECT_ROOT"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-[[ -f .env ]] || { echo "❌ .env 없음 — deploy.sh 를 먼저 실행하세요"; exit 1; }
-set -a; source .env; set +a
+# .env 탐색: 스크립트와 같은 폴더 → 상위 디렉토리(최대 5단계). 평면 폴더/ repo 구조 모두 지원.
+ENV_FILE=""
+_d="$SCRIPT_DIR"
+for _ in 1 2 3 4 5; do
+  if [[ -f "$_d/.env" ]]; then ENV_FILE="$_d/.env"; break; fi
+  _d="$(dirname "$_d")"
+done
+[[ -n "$ENV_FILE" ]] || { echo "❌ .env 를 찾을 수 없음 — local_test.sh 와 같은 폴더(또는 상위)에 .env 를 두세요"; exit 1; }
+echo "ℹ️  .env: $ENV_FILE"
+set -a; source "$ENV_FILE"; set +a
 : "${GATEWAY_URL:?GATEWAY_URL 비어있음 — deploy.sh 실행 필요}"
 : "${COGNITO_DOMAIN:?COGNITO_DOMAIN 비어있음}"
 : "${COGNITO_CLIENT_ID:?}" ; : "${COGNITO_CLIENT_SECRET:?}" ; : "${COGNITO_GATEWAY_SCOPE:?}"
