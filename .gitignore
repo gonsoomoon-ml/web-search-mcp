@@ -1,0 +1,19 @@
+# ── Secrets / local config ─────────────────────────────
+.env
+.claude/settings.local.json
+
+# ── Tool artifacts ─────────────────────────────────────
+.playwright-mcp/
+
+# ── Python ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+
+# ── CloudFormation package 부산물 (deploy.sh 생성, teardown.sh 정리) ──
+infra/web-search-gateway/cognito.packaged.yaml
+
+# ── OS / editor ────────────────────────────────────────
+.DS_Store

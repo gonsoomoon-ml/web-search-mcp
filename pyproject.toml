@@ -1,0 +1,23 @@
+[project]
+name = "web-search-mcp"
+version = "0.1.0"
+description = "Web Search MCP for Claude Code on Bedrock — AgentCore Gateway + Tavily Lambda (simple test)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # AWS SDK — setup_gateway.py / cleanup_gateway.py (bedrock-agentcore-control)
+    "boto3>=1.34.0",
+    # MCP client — smoke_test.py (streamable-http transport + ClientSession)
+    # >=1.8.0: mcp.client.streamable_http 모듈이 1.8.0 부터 존재. <2: v2.0 에서 streamablehttp_client API 변경 예정.
+    "mcp>=1.8.0,<2",
+    # .env loader — smoke_test.py
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7.0",
+]
+
+[tool.uv]
+package = false

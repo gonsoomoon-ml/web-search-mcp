@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Web Search MCP — Simple Test (Cognito + 1 Lambda + 2 IAM Roles).
+  Standard AWS resources only. AgentCore Gateway/Target 은
+  infra/web-search-gateway/setup_gateway.py (boto3) 가 생성.
+  Reference: gonsoomoon-ml/aiops-multi-agent-workshop infra/cognito-gateway/cognito.yaml
+
+Parameters:
+  DemoUser:
+    Type: String
+    Description: Multi-user namespace prefix.
+    # 소문자만 — Cognito UserPoolDomain prefix(web-search-${DemoUser}-...) 는 소문자/숫자/하이픈만 허용.
+    AllowedPattern: '^[a-z0-9-]{1,16}$'
+    ConstraintDescription: 소문자/숫자/하이픈만, 1~16자 (Cognito Domain prefix 제약).
+    MinLength: 1
+    MaxLength: 16
+  TavilyApiKey:
+    Type: String
+    Description: Tavily API key (web_search Lambda 가 사용). NoEcho.
+    NoEcho: true
+    MinLength: 1
+
+Resources:
+
+  # === Cognito ========================================================
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'web-search-${DemoUser}-userpool'
+      MfaConfiguration: 'OFF'
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      # Domain prefix 는 globally unique — AccountId suffix 로 계정별 고유화.
+      Domain: !Sub 'web-search-${DemoUser}-${AWS::AccountId}'
+
+  UserPoolResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPool
+      Identifier: !Sub 'web-search-${DemoUser}-resource-server'
+      Name: 'Gateway Invoke'
+      Scopes:
+        - ScopeName: invoke
+          ScopeDescription: Invoke AgentCore Gateway tools
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: UserPoolResourceServer
+    Properties:
+      ClientName: !Sub 'web-search-${DemoUser}-client'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - !Sub 'web-search-${DemoUser}-resource-server/invoke'
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # === Lambda — web_search (Tavily) ===================================
+
+  WebSearchLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'web-search-${DemoUser}-web-search-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      # 외부 Tavily 호출만 — 추가 AWS 권한 불필요 (CloudWatch Logs 기본 실행 권한만).
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  WebSearchLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'web-search-${DemoUser}-web-search'
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      Code: ./lambda/web_search
+      Role: !GetAtt WebSearchLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          DEMO_USER: !Ref DemoUser
+          TAVILY_API_KEY: !Ref TavilyApiKey
+
+  # === IAM — Gateway execution role ===================================
+
+  GatewayIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'web-search-${DemoUser}-gateway-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke-web-search-lambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt WebSearchLambda.Arn
+
+Outputs:
+  UserPoolId:
+    Description: Cognito UserPool ID
+    Value: !Ref UserPool
+  Domain:
+    Description: Cognito UserPool Domain prefix
+    Value: !Ref UserPoolDomain
+  ClientId:
+    Description: Cognito UserPoolClient (M2M client_credentials)
+    Value: !Ref UserPoolClient
+  ResourceServerScope:
+    Description: OAuth2 scope for Gateway invoke (full name)
+    Value: !Sub 'web-search-${DemoUser}-resource-server/invoke'
+  LambdaWebSearchArn:
+    Description: web_search Lambda ARN
+    Value: !GetAtt WebSearchLambda.Arn
+  GatewayIamRoleArn:
+    Description: IAM Role ARN for AgentCore Gateway (Lambda invoke only)
+    Value: !GetAtt GatewayIamRole.Arn
