@@ -13,7 +13,7 @@
 다른 8~9개 MCP 서버를 전혀 안 건드리고, **web-search만 격리**해서 Claude Code를 띄웁니다.
 
 ```
-./infra/web-search-gateway/local_test.sh
+./clients/claude-code/local_test.sh
 ```
 
 스크립트가 하는 일: ① Cognito 토큰 발급 → ② web-search만 담은 임시 config 작성

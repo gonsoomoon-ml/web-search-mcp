@@ -3,7 +3,7 @@
 #   1) .env 로드 → Cognito M2M 토큰 발급
 #   2) web-search 만 담은 임시 MCP config 작성
 #   3) claude --strict-mcp-config 로 격리 세션 실행 (다른 MCP 서버 전부 무시)
-# 사용 (프로젝트 어디서든): ./infra/web-search-gateway/local_test.sh
+# 사용 (프로젝트 어디서든): ./clients/claude-code/local_test.sh
 # 끝나면 임시 config 자동 삭제. 기존 MCP 설정은 전혀 안 건드림.
 set -euo pipefail
 

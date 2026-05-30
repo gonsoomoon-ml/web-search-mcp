@@ -20,7 +20,7 @@
 
 ### A) Claude Code on Bedrock + 우리 게이트웨이
 ```
-./infra/web-search-gateway/local_test.sh
+./clients/claude-code/local_test.sh
 ```
 (격리 세션 — web-search만, `CLAUDE_CODE_USE_BEDROCK=1` 자동. 모델: `global.anthropic.claude-sonnet-4-6`)
 

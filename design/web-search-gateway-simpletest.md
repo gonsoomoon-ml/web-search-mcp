@@ -26,17 +26,20 @@ Claude Code (Bedrock)   ──또는──   smoke_test.py (직접 MCP client)
 
 ## 3. 파일 구조
 ```
-infra/web-search-gateway/
+server/                             # [목적 1] MCP 서버 = AgentCore Gateway 구축·배포
 ├── cognito.yaml                    # Cognito + 1 Lambda + 2 IAM Role (CFN). Gateway/Target 은 boto3.
 ├── lambda/web_search/handler.py    # Tavily /search 호출
 ├── setup_gateway.py                # boto3: create_gateway + web-search target (idempotent)
 ├── cleanup_gateway.py              # boto3: target + gateway 삭제
 ├── deploy.sh                       # CFN package+deploy → outputs → setup_gateway → .env 기록
 ├── teardown.sh                     # cleanup_gateway → CFN 삭제 → log group → .env 정리
-├── README.md
-└── TESTING.md                      # 레이어별 직접 테스트 가이드
-smoke_test.py                       # (루트) Cognito 토큰 → MCP → web_search 대화형 호출
-.env.example / .env                 # 워크숍 .env.example 패턴 트림 (TAVILY_API_KEY 만 수동 입력)
+└── README.md
+clients/                            # [목적 2] 클라이언트 설치 = 배포된 게이트웨이에 연결
+├── README.md · TESTING.md          # 개요 · 레이어별 직접 테스트 가이드
+├── smoke_test.py                   # raw MCP 클라이언트 대화형 테스터
+├── claude-code/{README.md, local_test.sh}      # Claude Code on Bedrock
+└── cowork/{README.md, cowork-token-helper.py}  # Cowork on Bedrock 3P
+.env.example / .env                 # 공유 (server가 쓰고 clients가 읽음, TAVILY_API_KEY 수동)
 pyproject.toml                      # boto3 + mcp + python-dotenv (uv)
 ```
 

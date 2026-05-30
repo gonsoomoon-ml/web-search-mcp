@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# infra/web-search-gateway/deploy.sh
+# server/deploy.sh
 #   Cognito + Lambda + IAM (CFN) + AgentCore Gateway + web-search Target (boto3)
 # Reference: gonsoomoon-ml/aiops-multi-agent-workshop infra/cognito-gateway/deploy.sh
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$PROJECT_ROOT/infra/web-search-gateway"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT/server"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -50,17 +50,17 @@ fi
 # ── 1. cfn package (Lambda Code 디렉토리 zip + S3 업로드) ─
 log "cfn package — Lambda Code 디렉토리 zip + S3 업로드"
 aws cloudformation package \
-    --template-file "$PROJECT_ROOT/infra/web-search-gateway/cognito.yaml" \
+    --template-file "$PROJECT_ROOT/server/cognito.yaml" \
     --s3-bucket "$DEPLOY_BUCKET" \
     --s3-prefix "web-search-gateway" \
     --region "$REGION" \
-    --output-template-file "$PROJECT_ROOT/infra/web-search-gateway/cognito.packaged.yaml" >/dev/null
+    --output-template-file "$PROJECT_ROOT/server/cognito.packaged.yaml" >/dev/null
 
 # ── 2. CFN deploy (Cognito + Lambda + IAM) ──────
 log "CFN deploy: $STACK"
 aws cloudformation deploy \
     --region "$REGION" \
-    --template-file "$PROJECT_ROOT/infra/web-search-gateway/cognito.packaged.yaml" \
+    --template-file "$PROJECT_ROOT/server/cognito.packaged.yaml" \
     --stack-name "$STACK" \
     --capabilities CAPABILITY_NAMED_IAM \
     --parameter-overrides "DemoUser=${DEMO_USER}" "TavilyApiKey=${TAVILY_API_KEY}"
@@ -90,7 +90,7 @@ log "boto3: Gateway + web-search Target 생성"
 TMP_OUT="$(mktemp)"
 trap 'rm -f "$TMP_OUT"' EXIT
 DEMO_USER="$DEMO_USER" AWS_REGION="$REGION" \
-    uv run python "$PROJECT_ROOT/infra/web-search-gateway/setup_gateway.py" \
+    uv run python "$PROJECT_ROOT/server/setup_gateway.py" \
     | tee "$TMP_OUT"
 
 GATEWAY_ID="$(grep '^GATEWAY_ID=' "$TMP_OUT" | cut -d= -f2-)"
@@ -120,4 +120,4 @@ update_env LAMBDA_WEB_SEARCH_ARN  "$LAMBDA_WEB_SEARCH_ARN"
 log "deploy 완료"
 log "  Gateway URL: $GATEWAY_URL"
 log "  Lambda (web_search): $LAMBDA_WEB_SEARCH_ARN"
-log "  검증: uv run python smoke_test.py \"latest AWS news today\""
+log "  검증: uv run python clients/smoke_test.py \"latest AWS news today\""

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# infra/web-search-gateway/teardown.sh — Gateway/Target → CFN stack → DEPLOY_BUCKET → .env 정리
+# server/teardown.sh — Gateway/Target → CFN stack → DEPLOY_BUCKET → .env 정리
 # Reference: gonsoomoon-ml/aiops-multi-agent-workshop infra/cognito-gateway/teardown.sh
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -46,7 +46,7 @@ delete_stack() {
 # CFN stack 의 Lambda invoke 권한이 살아있는 동안 호출 필요
 log "Gateway + Target 정리 (boto3, idempotent)"
 DEMO_USER="$DEMO_USER" AWS_REGION="$REGION" \
-    uv run python "$PROJECT_ROOT/infra/web-search-gateway/cleanup_gateway.py" || warn "cleanup_gateway.py 실패 (무시 후 진행)"
+    uv run python "$PROJECT_ROOT/server/cleanup_gateway.py" || warn "cleanup_gateway.py 실패 (무시 후 진행)"
 
 # ── 2. CFN stack 삭제 (post-verify) ─────────────
 log "CFN stack 삭제: $STACK"
@@ -66,7 +66,7 @@ if aws s3api head-bucket --bucket "$DEPLOY_BUCKET" --region "$REGION" 2>/dev/nul
 fi
 
 # ── 4. packaged.yaml 정리 ───────────────────────
-rm -f "$PROJECT_ROOT/infra/web-search-gateway/cognito.packaged.yaml"
+rm -f "$PROJECT_ROOT/server/cognito.packaged.yaml"
 
 # ── 5. .env 변수 비우기 ─────────────────────────
 log ".env 변수 비우기 (TAVILY_API_KEY 는 유지)"

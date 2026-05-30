@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   Web Search MCP — Simple Test (Cognito + 1 Lambda + 2 IAM Roles).
   Standard AWS resources only. AgentCore Gateway/Target 은
-  infra/web-search-gateway/setup_gateway.py (boto3) 가 생성.
+  server/setup_gateway.py (boto3) 가 생성.
   Reference: gonsoomoon-ml/aiops-multi-agent-workshop infra/cognito-gateway/cognito.yaml
 
 Parameters:

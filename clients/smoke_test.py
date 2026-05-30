@@ -1,11 +1,11 @@
 """smoke_test — AgentCore Gateway 경유 web_search 대화형 테스터.
 
 흐름: Cognito M2M 토큰 → streamable-http MCP 연결 → web_search 호출 → 결과 출력.
-사전: infra/web-search-gateway/deploy.sh 완료 후 .env 가 채워진 상태.
+사전: server/deploy.sh 완료 후 .env 가 채워진 상태.
 
 실행:
-  uv run python smoke_test.py                 # 대화형 — 검색어를 반복 입력 (빈 줄/Ctrl-D 종료)
-  uv run python smoke_test.py 검색어 ...        # 한 번 실행 (인자를 검색어로)
+  uv run python clients/smoke_test.py                 # 대화형 — 검색어를 반복 입력 (빈 줄/Ctrl-D 종료)
+  uv run python clients/smoke_test.py 검색어 ...        # 한 번 실행 (인자를 검색어로)
 """
 import asyncio
 import base64

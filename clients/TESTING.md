@@ -33,9 +33,9 @@ uv --version
 
 ```bash
 # 파이썬 컴파일
-python3 -m py_compile infra/web-search-gateway/*.py infra/web-search-gateway/lambda/web_search/handler.py
+python3 -m py_compile server/*.py server/lambda/web_search/handler.py clients/smoke_test.py clients/cowork/cowork-token-helper.py
 # bash 문법
-bash -n infra/web-search-gateway/deploy.sh && bash -n infra/web-search-gateway/teardown.sh
+bash -n server/deploy.sh && bash -n server/teardown.sh
 ```
 기대: 에러 없이 종료(코드 0).
 
@@ -50,7 +50,7 @@ python3 - <<'PY'
 import os, sys, json
 from unittest import mock
 os.environ["TAVILY_API_KEY"] = "dummy"
-sys.path.insert(0, "infra/web-search-gateway/lambda/web_search")
+sys.path.insert(0, "server/lambda/web_search")
 import handler
 def ctx(t):
     cc = type("CC", (), {"custom": {"bedrockAgentCoreToolName": t}})()
@@ -116,7 +116,7 @@ aws lambda invoke --region "$AWS_REGION" \
 
 ### 3-1. 배포
 ```bash
-./infra/web-search-gateway/deploy.sh
+./server/deploy.sh
 ```
 - 소요: 약 3~5분 (Cognito+Lambda+IAM CFN ~2-3분, Gateway 생성 ~30-60초)
 - 완료 후 `.env` 에 `GATEWAY_URL`, `COGNITO_*`, `LAMBDA_WEB_SEARCH_ARN` 이 채워짐
@@ -134,7 +134,7 @@ aws bedrock-agentcore-control list-gateways --region "$AWS_REGION" \
 
 ### 3-3. 스모크 테스트 (Cognito 토큰 → MCP → web_search)
 ```bash
-uv run python smoke_test.py "latest AWS news today"
+uv run python clients/smoke_test.py "latest AWS news today"
 ```
 기대 출력:
 ```
@@ -171,7 +171,7 @@ claude mcp list                        # web-search ✓ Connected
 ## 정리 (과금 방지 — 테스트 후 필수)
 
 ```bash
-./infra/web-search-gateway/teardown.sh
+./server/teardown.sh
 ```
 Gateway/Target 삭제 → CFN 스택 삭제 → Lambda 로그그룹 삭제 → S3 배포버킷 삭제 → `.env` 변수 비움(키는 유지).
 
@@ -196,7 +196,7 @@ Gateway/Target 삭제 → CFN 스택 삭제 → Lambda 로그그룹 삭제 → S
 ## 한 줄 빠른 경로
 ```bash
 uv sync && cp -n .env.example .env   # → .env 에 TAVILY_API_KEY 입력
-./infra/web-search-gateway/deploy.sh
-uv run python smoke_test.py "latest AWS news today"
-./infra/web-search-gateway/teardown.sh
+./server/deploy.sh
+uv run python clients/smoke_test.py "latest AWS news today"
+./server/teardown.sh
 ```
