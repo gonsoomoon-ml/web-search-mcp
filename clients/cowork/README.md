@@ -69,7 +69,7 @@ pwd                                                  # 절대경로 메모 (STEP
 | **URL** | `.env`의 `GATEWAY_URL` | `https://web-search-gsmoon-gateway-ot0el1g06p.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp` |
 | **OAuth** | **None** | `None` |
 | **Headers** *(현재 동작 ✅)* | **+ Add** → Key `Authorization`, Value `Bearer <token>` | `Authorization` : `Bearer eyJ...`(발급 토큰) |
-| **Headers helper script** *(자동갱신 목표 — 현재 미작동)* | (비워둠) | (비워둠) |
+| **Headers helper script** *(자동갱신 목표 — 현재 미작동, 동작 시 입력)* | `<repo 절대경로>/clients/cowork/cowork-token-helper.py` | `/Users/moongons/261231-VS-Code/web-search-mcp/clients/cowork/cowork-token-helper.py` |
 | **Tool policy** | **+ Add** → tool `web_search` → `allow` | `web_search` → `allow` |
 
 > **"값(일반 형식)"** = 다른 환경/사람용 placeholder, **"현재 값"** = 이 배포의 예시. URL은 `.env`의 `GATEWAY_URL`, helper 경로는 repo `pwd` 기준.
