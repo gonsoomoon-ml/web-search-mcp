@@ -57,55 +57,78 @@ pwd                                                  # 절대경로 메모 (STEP
 
 ---
 
-## STEP 3 — `managedMcpServers`를 설정에 넣기 (단일 머신)
-`managedMcpServers` 키는 **3P 설정 파일**(`configLibrary/<id>.json`)의 최상위에 들어간다.
+## STEP 3 — Cowork에 등록 (단일 머신)
 
-### 3a. 자동 스크립트 — 가장 쉬움 ✅ (권장)
+### 3a. in-app UI — 가장 쉬움 ✅ (스크린샷 확인, 권장)
+**Developer → Configure third-party inference → 왼쪽 "Connectors & extensions" → MCP SERVERS의 "Managed MCP servers" → "+ Add server"** → 폼에 아래 값 입력:
+
+| 폼 필드 | 값 (일반 형식 — 본인 값으로) | 현재 값 (예시) |
+|---|---|---|
+| **Name** | `web-search` | `web-search` |
+| **Transport** | **Streamable HTTP** (= 우리 http) | `Streamable HTTP` |
+| **URL** | `.env`의 `GATEWAY_URL` | `https://web-search-gsmoon-gateway-ot0el1g06p.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp` |
+| **OAuth** | **None** | `None` |
+| **Headers** *(현재 동작 ✅)* | **+ Add** → Key `Authorization`, Value `Bearer <token>` | `Authorization` : `Bearer eyJ...`(발급 토큰) |
+| **Headers helper script** *(자동갱신 목표 — 현재 미작동)* | (비워둠) | (비워둠) |
+| **Tool policy** | **+ Add** → tool `web_search` → `allow` | `web_search` → `allow` |
+
+> **"값(일반 형식)"** = 다른 환경/사람용 placeholder, **"현재 값"** = 이 배포의 예시. URL은 `.env`의 `GATEWAY_URL`, helper 경로는 repo `pwd` 기준.
+
+→ **"Test this connection"**(Apply 전 helper+게이트웨이 왕복 검증) → **Save Changes → Apply Changes** → **Cowork 완전 종료 후 재시작**.
+
+> **인증 — 현재 동작 확인된 방법 = 정적 `Headers`(Authorization: Bearer)** (2026-05-31 실측).
+> `Headers helper script`(headersHelper)는 필드는 있으나 **단일-사용자 3P에서 Cowork이 호출/사용하지 않아 미작동** → helper 필드는 **비우고** 정적 헤더 사용.
+> 토큰을 발급해 클립보드로 복사 → Headers의 `Authorization` Value에 붙여넣기(Cmd+V):
+> ```bash
+> clients/cowork/cowork-token-helper.py | python3 -c 'import json,sys;print(json.load(sys.stdin)["Authorization"])' | tr -d '\n' | pbcopy
+> ```
+> ⚠️ 정적 토큰은 **~1h 만료** → 만료 시 위 명령으로 재발급·재입력 후 **Cowork 재시작**(launch 시 1회만 읽음). 자동 갱신(headersHelper)은 [조사 중](#확인-메모-스크린샷-실측-2026-05-31).
+
+### 3b. 자동 스크립트 (UI 대신, 파일에 직접)
 ```bash
 python3 clients/cowork/install-managed-mcp.py
 ```
-활성 `<id>.json`(=`_meta.json`의 `appliedId`)을 찾아 `GATEWAY_URL`(.env)·helper 절대경로로
-`managedMcpServers`를 추가한다. **기존 키(추론 자격증명 포함) 보존 + `.bak` 백업 + 멱등.**
-→ 이후 **Cowork 완전 종료 후 재시작**.
+활성 `configLibrary/<id>.json`(=`_meta.json`의 `appliedId`)을 찾아 `managedMcpServers`를 추가한다. **기존 키(자격증명 포함) 보존 + `.bak` 백업 + 멱등.** → Cowork 재시작.
 
-### 3b. 설정 파일 직접 편집 (수동)
-```bash
-# 1) 설정 디렉토리 확인
-ls ~/Library/Application\ Support/Claude-3p/configLibrary/        # _meta.json + <id>.json 들
-# 2) 활성 설정 파일이 무엇인지 (_meta.json 이 가리킴)
-cat ~/Library/Application\ Support/Claude-3p/configLibrary/_meta.json
-```
-활성 `<id>.json`을 열면 이미 `inferenceProvider`·`inferenceBedrockRegion`·`inferenceModels` 같은 **최상위 키들**이 있다. 그 **형제로 `managedMcpServers` 키를 추가**한다:
+### 3c. 설정 파일 손편집
+활성 `<id>.json`을 열면 `inferenceProvider`·`inferenceModels` 등 **최상위 키**가 있다. 그 **형제로 `managedMcpServers`를 추가**(STEP 2의 JSON):
 ```json
 {
   "inferenceProvider": "bedrock",
-  "inferenceBedrockRegion": "us-east-1",
   "inferenceModels": [ ... ],
   "managedMcpServers": [
-    {
-      "name": "web-search",
-      "url": "https://web-search-<id>.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
-      "transport": "http",
-      "headersHelper": "/ABS/PATH/web-search-mcp/clients/cowork/cowork-token-helper.py",
-      "headersHelperTtlSec": 3000,
-      "toolPolicy": { "web_search": "allow" }
-    }
+    { "name": "web-search", "url": "<GATEWAY_URL>", "transport": "http",
+      "headersHelper": "<repo 절대경로>/clients/cowork/cowork-token-helper.py",
+      "headersHelperTtlSec": 3000, "toolPolicy": { "web_search": "allow" } }
   ]
 }
 ```
-> 로컬 파일은 JSON **객체**로 직접 넣는다(`.mobileconfig`/registry 같은 MDM store만 값을 "JSON 문자열"로 인코딩). 저장 → **Cowork 완전 종료 후 재시작**(설정은 launch 시 1회만 읽음).
+> 로컬 파일은 JSON **객체**로 직접(MDM store만 "JSON 문자열"). 저장 → 재시작.
 
-### 3c. in-app 창 (대안)
-Developer → Configure third-party inference → 왼쪽 **"Connectors & extensions"** 섹션 → MCP 서버 추가 → **"Apply locally"**(같은 `configLibrary/`에 기록) → 재시작.
-> ⚠️ 화면엔 `managedMcpServers`라는 글자가 아니라 "MCP servers"/"Connectors" 같은 **라벨**로 보인다. single-user 창이 이 편집을 노출하는지 문서 미확정 → **안 보이면 3a**.
+<details><summary><b>조직 배포(MDM, 다수 머신) — .mobileconfig 프로파일</b></summary>
 
-<details><summary><b>조직 배포(MDM, 다수 머신)</b></summary>
-
-같은 창에서 **`.mobileconfig`(macOS)/`.reg`(Windows)** export → Jamf/Kandji/Intune·Group Policy로 배포.
-- macOS 도메인 `com.anthropic.claudefordesktop` → `/Library/Managed Preferences/` (이때는 값을 **JSON 문자열**로).
-- Windows `HKLM\SOFTWARE\Policies\Claude`(machine) / `HKCU\...`(user).
-- 우선순위: 관리(MDM) 소스가 있으면 그것이 이기고 로컬값은 무시(in-app 창 read-only).
+Export 버튼으로 **`.mobileconfig`(macOS)/`.reg`(Windows)** 받아 Jamf/Kandji/Intune·GPO로 배포.
+- 프로파일에선 값을 **JSON 문자열**로(`inferenceModels`처럼). 즉:
+  `<key>managedMcpServers</key><string>[{"name":"web-search","url":"<GATEWAY_URL>","transport":"http","headersHelper":"<abs>/clients/cowork/cowork-token-helper.py","headersHelperTtlSec":3000,"toolPolicy":{"web_search":"allow"}}]</string>`
+- macOS 도메인 `com.anthropic.claudefordesktop`. Windows `HKLM\SOFTWARE\Policies\Claude`.
+- 우선순위: 관리(MDM) 소스가 있으면 그것이 이기고 로컬값 무시(in-app 창 read-only).
 </details>
+
+---
+
+## 인증 방법 비교 (Cowork ↔ 게이트웨이)
+
+| 항목 | ① 정적 Headers (Bearer) | ② Headers helper script | ③ OAuth (Bring your own client) |
+|---|---|---|---|
+| **Cowork이 토큰 얻는 법** | 사용자가 발급한 토큰을 헤더에 직접 붙여넣음 | Cowork이 지정 실행파일을 돌려 stdout 헤더 JSON 사용 | Cowork이 IdP와 OAuth 토큰 교환을 직접 수행 |
+| **맞는 인증 모델** | 아무 Bearer 토큰 | 아무 Bearer (프로그램이 발급) | 사용자 sign-in (authorization_code) |
+| **우리 M2M 게이트웨이 적합성** | ✅ 맞음 (우리 M2M 토큰 그대로) | ✅ 설계상 딱 맞음 (`cowork-token-helper.py`=M2M 발급) | ⚠️ 불일치 (우리는 client_credentials, 사용자·브라우저 없음) |
+| **~1h 만료 처리** | ❌ 자동 갱신 없음 → 재발급+재입력+재시작 | ✅ TTL마다 자동 재발급 *(되면)* | ✅ Cowork이 자동 *(되면)* |
+| **현재 상태** | ✅ **동작 확인** (2026-05-31) | ❌ **미작동** (단일-사용자 3P에서 Cowork이 호출 안 함) | ❓ **미검증** (sign-in 모델이라 안 될 공산 큼) |
+| **입력 필드** | Headers: `Authorization` = `Bearer <token>` | Headers helper script: helper 절대경로 | Client ID / secret / Authorization server / Tenant ID |
+| **우리 케이스 판정** | **현재 유일한 동작 경로** | 되면 최선, 지금은 안 됨(원인 조사) | 사실상 부적합 (Cognito를 authorization_code로 재구성해야) |
+
+> AgentCore Gateway는 **무인증 미지원** — `create-gateway`의 `authorizer-type`이 필수이며 enum은 `CUSTOM_JWT`(Bearer)·`AWS_IAM`(SigV4)뿐, `NONE` 없음(CLI 확인 2026-05-31). Cowork(Bearer 클라이언트)엔 `CUSTOM_JWT`(Cognito)가 매칭 → ①~③ 중 **①만 현재 동작**.
 
 ---
 
@@ -141,12 +164,13 @@ Cowork에서:
 - **claude.ai Connectors UI** — static Bearer 미지원 + DCR 미노출 + egress가 Anthropic 클라우드.
 - **`claude mcp add`** — Claude Code(CLI) 전용. Cowork 3P엔 안 됨.
 
-## 실측 필요 (문서로 확정 못 함)
-1. 단일-사용자 in-app 창의 `managedMcpServers` 편집 노출 여부 → STEP 3 fallback 준비.
+## 확인 메모 (스크린샷 실측, 2026-05-31)
+1. ✅ **E2E 검증됨 (2026-05-31) — 정적 `Headers`(Authorization: Bearer)로**. 단일-사용자 in-app "+ Add server"에 Name/Transport/URL/OAuth/Headers/Headers helper script/Tool policy + "Test this connection" 필드가 있고, **정적 헤더로 등록 시 Cowork이 `web_search`를 자율 호출(멀티스텝)해 정확한 결과+인용 반환** 확인(질의 "삼성전자 주가" → 317,000원, 출처 매일경제/Daum). → **게이트웨이/Cognito/Lambda/Tavily 전 경로 정상**.
+   - ❌ **`Headers helper script`(headersHelper) 미작동** — helper 단독 실행은 되나 Cowork(단일-사용자 3P)이 호출/사용하지 않음. 원인 후보(조사 중): Cowork이 helper를 실행하는 환경의 PATH/`env python3` 해석, 샌드박스, 호출 타임아웃, 또는 in-app/configLibrary 경로에서 headersHelper 미지원(MDM 프로파일 전용일 가능성). → 현재는 **정적 헤더 + ~1h 재입력**이 동작 경로.
 2. macOS 관리설정 도메인 `com.anthropic.claudefordesktop`(일부 페이지 `com.anthropic.claudecode` 표기) — `defaults read`로 실측.
 3. `headersHelper` 호출 타임아웃 정확값 미문서화 → helper를 가볍게 유지(우리 건 단순 토큰 발급).
 4. `COGNITO_CLIENT_SECRET`가 `.env` 평문 — 단일 머신 테스트 OK, 운영은 Secrets Manager/키체인.
 
 ## 한 줄 요약
-> Cowork 3P는 `claude mcp add` 불가 → **`managedMcpServers`로 프로비저닝**(단일 머신은 in-app "Configure third-party inference" → Connectors & extensions → Apply locally).
-> `transport:"http"` + **`headersHelper`(=`cowork-token-helper.py`)**면 ~1h Cognito JWT가 자동 갱신되어 장기 세션도 안 끊긴다.
+> Cowork 3P는 `claude mcp add` 불가 → **in-app "Connectors & extensions → Managed MCP servers → + Add server"**에서 등록(STEP 3a).
+> Transport=**Streamable HTTP**, OAuth=**None**, **Headers helper script**=`cowork-token-helper.py` 절대경로 → ~1h Cognito JWT 자동 갱신, 장기 세션도 안 끊긴다.
