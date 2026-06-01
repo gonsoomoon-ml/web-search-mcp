@@ -29,6 +29,7 @@ import datetime
 import json
 import os
 import sys
+import time
 import traceback
 import urllib.parse
 import urllib.request
@@ -40,6 +41,11 @@ NEEDED = ("COGNITO_DOMAIN", "COGNITO_CLIENT_ID", "COGNITO_CLIENT_SECRET", "COGNI
 LOG_PATH = os.environ.get("TOKEN_HELPER_LOG") or os.path.join(
     os.path.expanduser("~"), ".cache", "web-search-mcp", "token-helper.log"
 )
+
+# 토큰 캐시: 매 호출 mint(네트워크 ~1-2s)를 피해 캐시 적중 시 즉시 출력 — Cowork 의
+# headersHelper 타임아웃이 짧을 경우 대비(레퍼런스 token-helper.sh 의 tokens.json 패턴).
+CACHE_PATH = os.path.join(os.path.expanduser("~"), ".cache", "web-search-mcp", "token-cache.json")
+CACHE_SKEW = 300  # 만료 5분 전부터는 새로 발급(경계 401 회피)
 
 
 def _log(msg):
@@ -79,7 +85,62 @@ def _load_env_if_missing():
     return None
 
 
+def _read_cached_token():
+    """유효한 캐시 토큰 반환. 없거나 만료 임박(CACHE_SKEW 이내)이면 (None, None)."""
+    try:
+        with open(CACHE_PATH) as f:
+            c = json.load(f)
+        left = c.get("expires_at", 0) - time.time()
+        if c.get("access_token") and left > CACHE_SKEW:
+            return c["access_token"], int(left)
+    except Exception:  # noqa: BLE001 - 캐시 없음/손상은 그냥 mint 로 폴백
+        pass
+    return None, None
+
+
+def _write_cached_token(token, expires_in):
+    """캐시 저장(사용자 소유 0700 디렉터리에 0600·O_NOFOLLOW). 실패해도 무시."""
+    try:
+        d = os.path.dirname(CACHE_PATH)
+        if d:
+            os.makedirs(d, mode=0o700, exist_ok=True)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(CACHE_PATH, flags, 0o600)
+        try:
+            os.write(fd, json.dumps({
+                "access_token": token,
+                "expires_at": time.time() + int(expires_in),
+            }).encode("utf-8"))
+        finally:
+            os.close(fd)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _mint_token():
+    """Cognito M2M client_credentials → access_token, expires_in 반환."""
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    url = f"https://{os.environ['COGNITO_DOMAIN']}.auth.{region}.amazoncognito.com/oauth2/token"
+    scope = os.environ["COGNITO_GATEWAY_SCOPE"]
+    _log(f"cache miss → minting: url={url} scope={scope} region={region}")  # 시크릿/토큰 미기록
+    body = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "scope": scope,
+    }).encode("utf-8")
+    creds = base64.b64encode(
+        f"{os.environ['COGNITO_CLIENT_ID']}:{os.environ['COGNITO_CLIENT_SECRET']}".encode()
+    ).decode()
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {creds}",
+    })
+    with urllib.request.urlopen(req, timeout=8) as r:
+        resp = json.load(r)
+    return resp["access_token"], int(resp.get("expires_in", 3600))
+
+
 def main():
+    t0 = time.time()
     # Cowork 의 슬림한 env 에서 호출되는지 진단: 호출 흔적 + 환경 스냅샷.
     _log(
         f"invoked pid={os.getpid()} ppid={os.getppid()} argv={sys.argv} "
@@ -96,35 +157,35 @@ def main():
         print(f"missing env: {missing} (.env 또는 환경변수)", file=sys.stderr)
         sys.exit(1)
 
-    region = os.environ.get("AWS_REGION", "us-east-1")
-    url = f"https://{os.environ['COGNITO_DOMAIN']}.auth.{region}.amazoncognito.com/oauth2/token"
-    scope = os.environ["COGNITO_GATEWAY_SCOPE"]
-    _log(f"minting token: url={url} scope={scope} region={region}")  # 시크릿/토큰은 기록 안 함
-    body = urllib.parse.urlencode({
-        "grant_type": "client_credentials",
-        "scope": scope,
-    }).encode("utf-8")
-    creds = base64.b64encode(
-        f"{os.environ['COGNITO_CLIENT_ID']}:{os.environ['COGNITO_CLIENT_SECRET']}".encode()
-    ).decode()
-    req = urllib.request.Request(url, data=body, headers={
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": f"Basic {creds}",
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=8) as r:
-            token = json.load(r)["access_token"]
-    except Exception as e:  # noqa: BLE001 - helper 는 단순히 실패를 알리고 종료
-        _log(f"FAIL token mint: {e!r}\n{traceback.format_exc().rstrip()}")
-        print(f"token mint failed: {e}", file=sys.stderr)
-        sys.exit(2)
+    # 캐시 우선 — 적중 시 네트워크 없이 즉시(타임아웃 가설 차단).
+    token, ttl_left = _read_cached_token()
+    if token:
+        _log(f"cache hit (ttl_left={ttl_left}s, {int((time.time() - t0) * 1000)}ms)")
+    else:
+        try:
+            token, expires_in = _mint_token()
+        except Exception as e:  # noqa: BLE001 - helper 는 단순히 실패를 알리고 종료
+            _log(f"FAIL token mint: {e!r}\n{traceback.format_exc().rstrip()}")
+            print(f"token mint failed: {e}", file=sys.stderr)
+            sys.exit(2)
+        _write_cached_token(token, expires_in)
+        _log(f"minted (len={len(token)}, {int((time.time() - t0) * 1000)}ms)")
 
-    _log(f"OK emitting Authorization header (token len={len(token)}, newline-terminated)")
-    # 계약: stdout 에 헤더 JSON 한 줄 + **trailing newline 필수**.
-    # 경험적 확인(2026-06-01): newline 없으면 Cowork 의 headersHelper reader 가
-    # 미종료 라인으로 보고 헤더를 버림 → 게이트웨이 "Missing Bearer token".
-    # 레퍼런스 token-helper.sh 도 printf '...\n' 로 개행 종료.
-    sys.stdout.write(json.dumps({"Authorization": f"Bearer {token}"}) + "\n")
+    # 계약: stdout 에 헤더 JSON 한 줄 + trailing newline. flush 로 즉시 파이프에 씀 →
+    # Cowork 가 reader 를 일찍 닫았으면 BrokenPipeError 로 잡혀 timeout 을 직접 진단.
+    payload = json.dumps({"Authorization": f"Bearer {token}"}) + "\n"
+    try:
+        sys.stdout.write(payload)
+        sys.stdout.flush()
+        _log(f"OK wrote header (newline-terminated, total {int((time.time() - t0) * 1000)}ms)")
+    except BrokenPipeError:
+        _log(f"BROKEN PIPE — Cowork 가 reader 를 일찍 닫음(타임아웃 의심), "
+             f"total {int((time.time() - t0) * 1000)}ms")
+        try:
+            sys.stdout.close()
+        except Exception:  # noqa: BLE001
+            pass
+        sys.exit(3)
 
 
 if __name__ == "__main__":
