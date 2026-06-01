@@ -174,3 +174,8 @@ Cowork에서:
 ## 한 줄 요약
 > Cowork 3P는 `claude mcp add` 불가 → **in-app "Connectors & extensions → Managed MCP servers → + Add server"**에서 등록(STEP 3a).
 > Transport=**Streamable HTTP**, OAuth=**None**, **Headers helper script**=`cowork-token-helper.py` 절대경로 → ~1h Cognito JWT 자동 갱신, 장기 세션도 안 끊긴다.
+
+
+## Reference
+
+- https://github.com/hi-space/websearch-agentcore-gateway/blob/main/cowork/setup-mac.sh

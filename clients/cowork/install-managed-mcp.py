@@ -79,12 +79,15 @@ def main():
     if not os.path.exists(bak):
         shutil.copy(cfg_path, bak)  # 최초 원본만 보존
 
+    # TTL: 평상시 3000(만료 경계 회피). 진단 시 HEADERS_HELPER_TTL=60 으로 helper 호출 강제.
+    ttl = int(os.environ.get("HEADERS_HELPER_TTL", "3000"))
+
     cfg["managedMcpServers"] = [{
         "name": "web-search",
         "url": gw,
         "transport": "http",
         "headersHelper": helper,
-        "headersHelperTtlSec": 3000,
+        "headersHelperTtlSec": ttl,
         "toolPolicy": {"web_search": "allow"},
     }]
     json.dump(cfg, open(cfg_path, "w"), indent=2)
@@ -93,6 +96,7 @@ def main():
     print(f"   backup     : {bak}")
     print(f"   gateway    : {gw}")
     print(f"   headersHelper: {helper}")
+    print(f"   ttlSec     : {ttl}")
     print(f"   keys now   : {list(cfg.keys())}")
     print("   다음 → Cowork 완전 종료 후 재시작 → /mcp 또는 web_search 도구 확인")
 
