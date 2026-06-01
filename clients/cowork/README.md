@@ -68,21 +68,21 @@ pwd                                                  # 절대경로 메모 (STEP
 | **Transport** | **Streamable HTTP** (= 우리 http) | `Streamable HTTP` |
 | **URL** | `.env`의 `GATEWAY_URL` | `https://web-search-gsmoon-gateway-ot0el1g06p.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp` |
 | **OAuth** | **None** | `None` |
-| **Headers** *(현재 동작 ✅)* | **+ Add** → Key `Authorization`, Value `Bearer <token>` | `Authorization` : `Bearer eyJ...`(발급 토큰) |
-| **Headers helper script** *(자동갱신 목표 — 현재 미작동, 동작 시 입력)* | `<repo 절대경로>/clients/cowork/cowork-token-helper.py` | `/Users/moongons/261231-VS-Code/web-search-mcp/clients/cowork/cowork-token-helper.py` |
+| **Headers** *(데모용 — 1h 재입력)* | **+ Add** → Key `Authorization`, Value `Bearer <token>` | `Authorization` : `Bearer eyJ...`(발급 토큰) |
+| **Headers helper script** *(in-app/configLibrary 경로는 미적용 — 자동갱신은 STEP 3d mobileconfig)* | (비움) | (비움 — STEP 3d 사용) |
 | **Tool policy** | **+ Add** → tool `web_search` → `allow` | `web_search` → `allow` |
 
 > **"값(일반 형식)"** = 다른 환경/사람용 placeholder, **"현재 값"** = 이 배포의 예시. URL은 `.env`의 `GATEWAY_URL`, helper 경로는 repo `pwd` 기준.
 
 → **"Test this connection"**(Apply 전 helper+게이트웨이 왕복 검증) → **Save Changes → Apply Changes** → **Cowork 완전 종료 후 재시작**.
 
-> **인증 — 현재 동작 확인된 방법 = 정적 `Headers`(Authorization: Bearer)** (2026-05-31 실측).
-> `Headers helper script`(headersHelper)는 필드는 있으나 **단일-사용자 3P에서 Cowork이 호출/사용하지 않아 미작동** → helper 필드는 **비우고** 정적 헤더 사용.
-> 토큰을 발급해 클립보드로 복사 → Headers의 `Authorization` Value에 붙여넣기(Cmd+V):
+> **인증 방법 두 가지:** ① 정적 `Headers`(Authorization: Bearer) = 빠르지만 ~1h 재입력(데모, 2026-05-31 실측). ② **headersHelper = 자동갱신** — 단 in-app/configLibrary 가 아니라 **mobileconfig(관리형 prefs)로 등록해야 동작** → **STEP 3d 권장**(2026-06-01 실측).
+> in-app UI 의 `Headers helper script` 필드는 configLibrary 에 기록되는데, 그 경로의 helper 는 Cowork 이 *호출은 하나 요청에 미적용*이다. **자동갱신을 원하면 이 필드는 비우고 STEP 3d(mobileconfig)** 를 쓴다.
+> (데모로 정적 헤더를 쓸 경우) 토큰을 발급해 클립보드로 복사 → Headers의 `Authorization` Value에 붙여넣기(Cmd+V):
 > ```bash
 > clients/cowork/cowork-token-helper.py | python3 -c 'import json,sys;print(json.load(sys.stdin)["Authorization"])' | tr -d '\n' | pbcopy
 > ```
-> ⚠️ 정적 토큰은 **~1h 만료** → 만료 시 위 명령으로 재발급·재입력 후 **Cowork 재시작**(launch 시 1회만 읽음). 자동 갱신(headersHelper)은 [조사 중](#확인-메모-스크린샷-실측-2026-05-31).
+> ⚠️ 정적 토큰은 **~1h 만료** → 만료 시 위 명령으로 재발급·재입력 후 **Cowork 재시작**(launch 시 1회만 읽음). **재입력이 싫으면 STEP 3d(mobileconfig headersHelper) = 자동 갱신.**
 
 ### 3b. 자동 스크립트 (UI 대신, 파일에 직접)
 ```bash
@@ -105,6 +105,20 @@ python3 clients/cowork/install-managed-mcp.py
 ```
 > 로컬 파일은 JSON **객체**로 직접(MDM store만 "JSON 문자열"). 저장 → 재시작.
 
+### 3d. mobileconfig 프로파일 — **자동갱신 동작 ✅ (권장, 2026-06-01 실측)**
+`headersHelper`는 **configLibrary 가 아니라 관리형 prefs 레이어**에 등록해야 Cowork 가 요청에 적용한다(위 핵심 발견). `install-mobileconfig.py`가 그 프로파일을 만들어 준다 — 사용자의 기존 inference 설정은 보존하고, 우리 게이트웨이용 `managedMcpServers`(headersHelper)만 관리형 prefs 로 주입.
+```bash
+git pull                                                  # newline+캐싱 helper 포함
+python3 clients/cowork/install-mobileconfig.py            # .mobileconfig 생성 (+ configLibrary 의 managedMcpServers 정리)
+open ~/.cache/web-search-mcp/web-search-mcp.mobileconfig  # → System Settings 에서 프로파일 승인(서명 없음 경고는 정상)
+```
+- 설치 직후(재시작 전) 관리형 prefs 진입 확인: `defaults read "/Library/Managed Preferences/$(whoami)/com.anthropic.claudefordesktop" managedMcpServers`
+- **Cowork Cmd+Q → 재시작 → web_search 트리거.** 이제 helper 가 TTL마다 자동 호출되어 **~1h 만료 재입력이 불필요**(장기 세션 유지).
+- 검증 로그: `tail -4 ~/.cache/web-search-mcp/token-helper.log` → `cache hit` / `OK wrote header`.
+- **원복:** System Settings → Privacy & Security → Profiles 에서 프로파일 삭제. (정적 헤더로 돌아가려면 `cp <id>.json.bak <id>.json` 후 재시작.)
+
+> 동작 메커니즘(실측): Cowork 가 cold mint 1.67s 를 끝까지 기다려 헤더를 받음(타임아웃 무관), 이후 캐시 적중 3ms. configLibrary 에 같은 helper 를 넣었을 땐 호출돼도 미적용 → 레이어가 결정적.
+
 <details><summary><b>조직 배포(MDM, 다수 머신) — .mobileconfig 프로파일</b></summary>
 
 Export 버튼으로 **`.mobileconfig`(macOS)/`.reg`(Windows)** 받아 Jamf/Kandji/Intune·GPO로 배포.
@@ -123,12 +137,14 @@ Export 버튼으로 **`.mobileconfig`(macOS)/`.reg`(Windows)** 받아 Jamf/Kandj
 | **Cowork이 토큰 얻는 법** | 사용자가 발급한 토큰을 헤더에 직접 붙여넣음 | Cowork이 지정 실행파일을 돌려 stdout 헤더 JSON 사용 | Cowork이 IdP와 OAuth 토큰 교환을 직접 수행 |
 | **맞는 인증 모델** | 아무 Bearer 토큰 | 아무 Bearer (프로그램이 발급) | 사용자 sign-in (authorization_code) |
 | **우리 M2M 게이트웨이 적합성** | ✅ 맞음 (우리 M2M 토큰 그대로) | ✅ 설계상 딱 맞음 (`cowork-token-helper.py`=M2M 발급) | ⚠️ 불일치 (우리는 client_credentials, 사용자·브라우저 없음) |
-| **~1h 만료 처리** | ❌ 자동 갱신 없음 → 재발급+재입력+재시작 | ✅ TTL마다 자동 재발급 *(되면)* | ✅ Cowork이 자동 *(되면)* |
-| **현재 상태** | ✅ **동작 확인** (2026-05-31) | ❌ **미작동** (단일-사용자 3P에서 Cowork이 호출 안 함) | ❓ **미검증** (sign-in 모델이라 안 될 공산 큼) |
-| **입력 필드** | Headers: `Authorization` = `Bearer <token>` | Headers helper script: helper 절대경로 | Client ID / secret / Authorization server / Tenant ID |
-| **우리 케이스 판정** | **현재 유일한 동작 경로** | 되면 최선, 지금은 안 됨(원인 조사) | 사실상 부적합 (Cognito를 authorization_code로 재구성해야) |
+| **~1h 만료 처리** | ❌ 자동 갱신 없음 → 재발급+재입력+재시작 | ✅ TTL마다 자동 재발급 (**동작**) | ✅ Cowork이 자동 *(되면)* |
+| **현재 상태** | ✅ **동작 확인** (2026-05-31) | ✅ **동작 확인** (2026-06-01, **관리형 prefs 프로파일 경유**) | ❓ **미검증** (sign-in 모델이라 안 될 공산 큼) |
+| **입력 필드** | Headers: `Authorization` = `Bearer <token>` | Headers helper script: helper 절대경로 (**configLibrary 아닌 mobileconfig 에 등록**) | Client ID / secret / Authorization server / Tenant ID |
+| **우리 케이스 판정** | 빠른 데모용(1h 재입력) | **권장 — 자동갱신 동작** (STEP 3d = `install-mobileconfig.py`) | 사실상 부적합 (Cognito를 authorization_code로 재구성해야) |
 
-> AgentCore Gateway는 **무인증 미지원** — `create-gateway`의 `authorizer-type`이 필수이며 enum은 `CUSTOM_JWT`(Bearer)·`AWS_IAM`(SigV4)뿐, `NONE` 없음(CLI 확인 2026-05-31). Cowork(Bearer 클라이언트)엔 `CUSTOM_JWT`(Cognito)가 매칭 → ①~③ 중 **①만 현재 동작**.
+> AgentCore Gateway는 **무인증 미지원** — `create-gateway`의 `authorizer-type`이 필수이며 enum은 `CUSTOM_JWT`(Bearer)·`AWS_IAM`(SigV4)뿐, `NONE` 없음(CLI 확인 2026-05-31). Cowork(Bearer 클라이언트)엔 `CUSTOM_JWT`(Cognito)가 매칭 → ①~③ 중 **① 정적 헤더(데모)와 ② headersHelper(자동갱신) 둘 다 동작**.
+>
+> **핵심 발견(2026-06-01):** ② headersHelper 는 **어느 레이어에 등록하느냐**가 결정적. **configLibrary** 에 넣으면 Cowork 가 helper 를 *호출은 하지만 그 출력을 요청 헤더에 적용하지 않음*("Missing Bearer token"). **관리형 prefs 레이어(macOS configuration profile = `.mobileconfig`)** 에 넣어야 honor 됨. (+ helper 출력은 **trailing newline 필수** — 미종료 라인은 폐기됨.) → STEP 3d.
 
 ---
 
@@ -166,14 +182,14 @@ Cowork에서:
 
 ## 확인 메모 (스크린샷 실측, 2026-05-31)
 1. ✅ **E2E 검증됨 (2026-05-31) — 정적 `Headers`(Authorization: Bearer)로**. 단일-사용자 in-app "+ Add server"에 Name/Transport/URL/OAuth/Headers/Headers helper script/Tool policy + "Test this connection" 필드가 있고, **정적 헤더로 등록 시 Cowork이 `web_search`를 자율 호출(멀티스텝)해 정확한 결과+인용 반환** 확인(질의 "삼성전자 주가" → 317,000원, 출처 매일경제/Daum). → **게이트웨이/Cognito/Lambda/Tavily 전 경로 정상**.
-   - ❌ **`Headers helper script`(headersHelper) 미작동** — helper 단독 실행은 되나 Cowork(단일-사용자 3P)이 호출/사용하지 않음. 원인 후보(조사 중): Cowork이 helper를 실행하는 환경의 PATH/`env python3` 해석, 샌드박스, 호출 타임아웃, 또는 in-app/configLibrary 경로에서 headersHelper 미지원(MDM 프로파일 전용일 가능성). → 현재는 **정적 헤더 + ~1h 재입력**이 동작 경로.
+   - ✅ **`headersHelper` 자동갱신 동작 (2026-06-01 실측, STEP 3d)** — 이전의 "미작동"은 **두 버그 중첩**이었음: ① 출력 **trailing newline 부재**(Cowork reader 가 미종료 라인 폐기 → "Missing Bearer token"), ② **잘못된 레이어** — headersHelper 를 **configLibrary** 에 넣으면 *호출은 되나 요청 미적용*, **관리형 prefs(mobileconfig)** 에 넣어야 honor. 진단 결정타 = helper 에 `~/.cache/web-search-mcp/token-helper.log` 호출-추적 로깅을 넣어 "Cowork 가 helper 를 *호출은 함*"을 입증(가설 역전). 로그 실측: cold mint 1671ms 를 Cowork 가 끝까지 대기(타임아웃 무관, BrokenPipe 없음), 이후 캐시 적중 3ms. → **정적 헤더는 데모용, 자동갱신 운영은 `install-mobileconfig.py`.**
 2. macOS 관리설정 도메인 `com.anthropic.claudefordesktop`(일부 페이지 `com.anthropic.claudecode` 표기) — `defaults read`로 실측.
 3. `headersHelper` 호출 타임아웃 정확값 미문서화 → helper를 가볍게 유지(우리 건 단순 토큰 발급).
 4. `COGNITO_CLIENT_SECRET`가 `.env` 평문 — 단일 머신 테스트 OK, 운영은 Secrets Manager/키체인.
 
 ## 한 줄 요약
-> Cowork 3P는 `claude mcp add` 불가 → **in-app "Connectors & extensions → Managed MCP servers → + Add server"**에서 등록(STEP 3a).
-> Transport=**Streamable HTTP**, OAuth=**None**, **Headers helper script**=`cowork-token-helper.py` 절대경로 → ~1h Cognito JWT 자동 갱신, 장기 세션도 안 끊긴다.
+> Cowork 3P는 `claude mcp add` 불가 → `managedMcpServers`로 등록. **빠른 데모 = 정적 Headers**(STEP 3a, ~1h 재입력), **운영(자동갱신) = headersHelper 를 mobileconfig(관리형 prefs)로 등록**(STEP 3d = `install-mobileconfig.py`).
+> 핵심(2026-06-01 실측): in-app/configLibrary 의 headersHelper 는 *호출돼도 요청에 미적용* — **관리형 prefs 레이어 + 출력 newline 종료**라야 동작. Transport=Streamable HTTP, OAuth=None.
 
 
 ## Reference
